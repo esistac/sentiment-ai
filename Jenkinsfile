@@ -5,7 +5,6 @@ pipeline {
     environment {
         IMAGE_NAME = 'sentiment-ai'
         REGISTRY = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO
-        // Chaque build produit une image taguée de façon unique et traçable
         IMAGE_TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
     
@@ -33,31 +32,43 @@ pipeline {
             }
         }
 
-        // 2.4 Stage 3 - Build
-        stage('Build') {
+        // 2.4 Stage 3 - Build & Test
+        stage('Build & Test') {
             steps {
-                sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
-                sh 'docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}'
-                sh 'docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:latest'
+                sh "docker build -t \${IMAGE_NAME}:\${IMAGE_TAG} ."
+                sh """
+                    docker run --rm \\
+                        \${IMAGE_NAME}:\${IMAGE_TAG} \\
+                        pytest tests/ -v \\
+                        --cov=src \\
+                        --cov-report=xml:coverage.xml \\
+                        --cov-report=term-missing \\
+                        --cov-fail-under=70
+                """
             }
-        }
-
-        // 2.5 Stage 4 - Test
-        stage('Test') {
-            steps {
-                sh 'docker compose up -d --build'
-                sh 'docker compose exec -T api pytest'
-            }
-        }
-
-        // 2.6 Stage 5 - Push
-        stage('Push') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
-                    sh 'echo "${GH_TOKEN}" | docker login ghcr.io -u ${GH_USER} --password-stdin'
+            post {
+                failure {
+                    echo 'Tests échoués ou coverage insuffisant (< 70%)'
                 }
-                sh 'docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}'
-                sh 'docker push ${REGISTRY}/${IMAGE_NAME}:latest'
+            }
+        }
+
+        // 2.5 Stage 4 - Push (conditionnel)
+        stage('Push') {
+            when { branch 'main' }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-token', 
+                    usernameVariable: 'REGISTRY_USER', 
+                    passwordVariable: 'REGISTRY_PASS'
+                )]) {
+                    sh """
+                        echo \$REGISTRY_PASS | docker login ghcr.io -u \$REGISTRY_USER --password-stdin
+                        docker push \${REGISTRY}/\${IMAGE_NAME}:\text{\${IMAGE_TAG}}
+                        docker tag \text{\${IMAGE_NAME}}:\text{\${IMAGE_TAG}} \${REGISTRY}/\${IMAGE_NAME}:latest
+                        docker push \${REGISTRY}/\${IMAGE_NAME}:latest
+                    """
+                }
             }
         }
     }
