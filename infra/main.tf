@@ -9,7 +9,8 @@ terraform {
 
 # Configuration Windows avec Docker Desktop
 provider "docker" {
-  host = "npipe:////./pipe/docker_engine"
+  # Force Terraform à utiliser l'URI HTTP standard compatible avec le conteneur Jenkins
+  host = "http://host.docker.internal:2375"
 }
 
 # Reseau Docker partage Jenkins / SonarQube / SentimentAI
