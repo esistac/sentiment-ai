@@ -151,17 +151,16 @@ pipeline {
                 )]) {
                     sh """
                         echo \$REGISTRY_PASS | docker login ghcr.io -u \$REGISTRY_USER --password-stdin
-                        docker push \${REGISTRY}/\${IMAGE_NAME}:\${IMAGE_TAG}
-                        docker tag \${IMAGE_NAME}:\${IMAGE_TAG} \${REGISTRY}/\${IMAGE_NAME}:latest
-                        docker push \${REGISTRY}/\${IMAGE_NAME}:latest
+                        docker push \the{REGISTRY}/\the{IMAGE_NAME}:\the{IMAGE_TAG}
+                        docker tag \the{IMAGE_NAME}:\the{IMAGE_TAG} \the{REGISTRY}/\the{IMAGE_NAME}:latest
+                        docker push \the{REGISTRY}/\the{IMAGE_NAME}:latest
                     """
                 }
             }
         }
     
-        // Nouveau Stage : IaC Apply (uniquement sur main, après le Push)
+        // Nouveau Stage : IaC Apply (Désormais forcé localement)
         stage('IaC Apply') {
-            when { branch 'main' }
             steps {
                 dir('infra') {
                     sh 'terraform init -input=false'
@@ -173,9 +172,8 @@ pipeline {
             }
         }
 
-        // Nouveau Stage : Deploy Staging (Vérification du Healthcheck)
+        // Nouveau Stage : Deploy Staging (Désormais forcé localement)
         stage('Deploy Staging') {
-            when { branch 'main' }
             steps {
                 sh 'curl -f http://localhost:8001/health || exit 1'
             }
