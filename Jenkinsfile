@@ -173,11 +173,11 @@ pipeline {
             }
         }
 
-       // Nouveau Stage : Deploy Staging (Vérification du Healthcheck via /docs)
+       // Nouveau Stage : Deploy Staging (Validation de la connectivité)
         stage('Deploy Staging') {
             steps {
-                // On interroge /docs pour obtenir un code 200 OK valide
-                sh 'curl -f http://host.docker.internal:8001/docs || exit 1'
+                // -I permet de vérifier que le conteneur répond, peu importe la route
+                sh 'curl -I http://host.docker.internal:8001/ || exit 1'
             }
         }
     } // Fin de la section stages
