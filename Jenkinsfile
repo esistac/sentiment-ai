@@ -6,8 +6,8 @@ pipeline {
         IMAGE_NAME  = 'sentiment-ai'
         REGISTRY    = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO si nécessaire
         IMAGE_TAG   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-        // Permet à Terraform dans Jenkins de se connecter au Docker de la machine Windows
-        DOCKER_HOST = 'tcp://host.docker.internal:2375'
+        // CORRECTION : Utilisation du protocole http:// pour le provider Terraform Docker
+        DOCKER_HOST = 'http://host.docker.internal:2375'
     }
     
     stages {
@@ -151,9 +151,9 @@ pipeline {
                 )]) {
                     sh """
                         echo \$REGISTRY_PASS | docker login ghcr.io -u \$REGISTRY_USER --password-stdin
-                        docker push \the{REGISTRY}/\the{IMAGE_NAME}:\the{IMAGE_TAG}
-                        docker tag \the{IMAGE_NAME}:\the{IMAGE_TAG} \the{REGISTRY}/\the{IMAGE_NAME}:latest
-                        docker push \the{REGISTRY}/\the{IMAGE_NAME}:latest
+                        docker push \${REGISTRY}/\${IMAGE_NAME}:\${IMAGE_TAG}
+                        docker tag \${IMAGE_NAME}:\${IMAGE_TAG} \text{REGISTRY}/\text{IMAGE_NAME}:latest
+                        docker push \${REGISTRY}/\${IMAGE_NAME}:latest
                     """
                 }
             }
