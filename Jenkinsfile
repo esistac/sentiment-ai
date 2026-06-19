@@ -1,4 +1,4 @@
-// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale avec Terraform)
+// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale avec Terraform Corrigée)
 pipeline {
     agent any // s’exécute sur n’importe quel agent disponible
     
@@ -6,8 +6,9 @@ pipeline {
         IMAGE_NAME  = 'sentiment-ai'
         REGISTRY    = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO si nécessaire
         IMAGE_TAG   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-        // CORRECTION : Utilisation du protocole http:// pour le provider Terraform Docker
-        DOCKER_HOST = 'http://host.docker.internal:2375'
+        
+        // Pour les commandes Docker classiques (Lint, Build, Trivy...)
+        DOCKER_HOST = 'tcp://host.docker.internal:2375'
     }
     
     stages {
@@ -34,8 +35,12 @@ pipeline {
             }
         }
 
-        // Nouveau Stage issu du PDF : IaC Validate (juste après Lint)
+        // Nouveau Stage issu du PDF : IaC Validate
         stage('IaC Validate') {
+            // On surcharge la variable juste pour Terraform ici
+            environment {
+                DOCKER_HOST = 'http://host.docker.internal:2375'
+            }
             steps {
                 dir('infra') {
                     sh 'terraform init -backend=false -input=false'
@@ -152,15 +157,19 @@ pipeline {
                     sh """
                         echo \$REGISTRY_PASS | docker login ghcr.io -u \$REGISTRY_USER --password-stdin
                         docker push \${REGISTRY}/\${IMAGE_NAME}:\${IMAGE_TAG}
-                        docker tag \${IMAGE_NAME}:\${IMAGE_TAG} \text{REGISTRY}/\text{IMAGE_NAME}:latest
+                        docker tag \${IMAGE_NAME}:\${IMAGE_TAG} \${REGISTRY}/\${IMAGE_NAME}:latest
                         docker push \${REGISTRY}/\${IMAGE_NAME}:latest
                     """
                 }
             }
         }
     
-        // Nouveau Stage : IaC Apply (Désormais forcé localement)
+        // Nouveau Stage : IaC Apply
         stage('IaC Apply') {
+            // On surcharge également ici en http:// pour que l'apply fonctionne
+            environment {
+                DOCKER_HOST = 'http://host.docker.internal:2375'
+            }
             steps {
                 dir('infra') {
                     sh 'terraform init -input=false'
@@ -172,7 +181,7 @@ pipeline {
             }
         }
 
-        // Nouveau Stage : Deploy Staging (Désormais forcé localement)
+        // Nouveau Stage : Deploy Staging
         stage('Deploy Staging') {
             steps {
                 sh 'curl -f http://localhost:8001/health || exit 1'
