@@ -173,11 +173,11 @@ pipeline {
             }
         }
 
-       // Nouveau Stage : Deploy Staging (Vérification du Healthcheck)
+       // Nouveau Stage : Deploy Staging (Vérification du Healthcheck via /docs)
         stage('Deploy Staging') {
             steps {
-                // Test de la racine '/' au lieu de '/health' pour éviter le 404
-                sh 'curl -f http://host.docker.internal:8001/ || exit 1'
+                // On interroge /docs pour obtenir un code 200 OK valide
+                sh 'curl -f http://host.docker.internal:8001/docs || exit 1'
             }
         }
     } // Fin de la section stages
