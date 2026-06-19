@@ -12,12 +12,6 @@ provider "docker" {
   host = "http://host.docker.internal:2375"
 }
 
-# Déclaration de la variable reçue depuis le Jenkinsfile
-variable "image_tag" {
-  type        = string
-  description = "Tag de l'image Docker à déployer"
-}
-
 # Import du réseau existant (cicd-network)
 resource "docker_network" "cicd" {
   name = "cicd-network"
@@ -50,16 +44,10 @@ resource "docker_container" "sentiment_staging" {
   ]
 
   healthcheck {
-    test         = ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    test         = ["CMD", "curl", "-f", "http://localhost:8000/"]
     interval     = "30s"
     timeout      = "10s"
     retries      = 3
     start_period = "0s"
   }
-}
-
-# Variables de sortie (Outputs)
-output "container_id" {
-  value       = docker_container.sentiment_staging.id
-  description = "ID du conteneur déployé"
 }
