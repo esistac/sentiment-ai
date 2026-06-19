@@ -72,6 +72,9 @@ pipeline {
             steps {
                 withSonarQubeEnv('sonarqube') {
                     sh '''
+                        # Accorder temporairement les droits d'écriture pour le conteneur scanner
+                        chmod -R 777 "$WORKSPACE"
+
                         docker run --rm \
                             --network cicd-network \
                             --volumes-from jenkins \
@@ -88,11 +91,13 @@ pipeline {
                             -Dsonar.python.coverage.reportPaths=coverage.xml \
                             -Dsonar.sourceEncoding=UTF-8 \
                             -Dsonar.scanner.metadataFilePath=$WORKSPACE/report-task.txt
+
+                        # Restaurer des droits d'accès standards sécurisés
+                        chmod -R 755 "$WORKSPACE"
                     '''
                 }
             }
         }
-
         stage ('Quality Gate') {
             steps {
                 timeout(time: 15, unit: 'MINUTES') {
