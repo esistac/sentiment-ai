@@ -1,4 +1,4 @@
-// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale avec Terraform Corrigée)
+// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale avec Terraform Fixée)
 pipeline {
     agent any // s’exécute sur n’importe quel agent disponible
     
@@ -7,7 +7,7 @@ pipeline {
         REGISTRY    = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO si nécessaire
         IMAGE_TAG   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
         
-        // Configuration universelle acceptée par Docker ET le provider Terraform sous Linux
+        // Configuration standard pour l'exécutable docker natif (Lint, Build, Trivy...)
         DOCKER_HOST = 'tcp://host.docker.internal:2375'
     }
     
@@ -39,7 +39,6 @@ pipeline {
         stage('IaC Validate') {
             steps {
                 dir('infra') {
-                    // On utilise le paramètre TF_WARN_OUTPUT_ERRORS pour assouplir Terraform
                     sh 'terraform init -backend=false -input=false'
                     sh 'terraform fmt -check'
                     sh 'terraform validate'
@@ -166,14 +165,10 @@ pipeline {
             steps {
                 dir('infra') {
                     sh 'terraform init -input=false'
-                    // On force l'endpoint directement via une variable d'environnement Terraform dédiée (TF_VAR_)
-                    // et on configure l'hôte Docker en désactivant la vérification TLS obsolète sous WSL
-                    withEnv(["TF_VAR_docker_host=tcp://host.docker.internal:2375"]) {
-                        sh """
-                            terraform apply -auto-approve \
-                                -var='image_tag=${IMAGE_TAG}'
-                        """
-                    }
+                    sh """
+                        terraform apply -auto-approve \
+                            -var='image_tag=${IMAGE_TAG}'
+                    """
                 }
             }
         }
