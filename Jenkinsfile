@@ -1,4 +1,4 @@
-// Jenkinsfile - Pipeline CI/CD SentimentAI
+// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale 8 Stages)
 pipeline {
     agent any // s’exécute sur n’importe quel agent disponible
     
@@ -9,7 +9,7 @@ pipeline {
     }
     
     stages {
-        // 2.2 Stage 1 - Checkout
+        // Stage 1 - Checkout
         stage('Checkout') {
             steps {
                 checkout scm
@@ -19,7 +19,7 @@ pipeline {
             }
         }
 
-        // 2.3 Stage 2 - Lint
+        // Stage 2 - Lint
         stage('Lint') {
             steps {
                 sh '''
@@ -32,13 +32,14 @@ pipeline {
             }
         }
 
-        // 2.4 Stage 3 - Build & Test
+        // Stage 3 - Build & Test
         stage ('Build & Test') {
             steps {
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                     # Supprimer un éventuel conteneur test-runner résiduel
                     docker rm -f test-runner 2>/dev/null || true
+                    
                     # Lancer les tests en nommant le conteneur pour copier coverage.xml
                     set +e
                     docker run \
@@ -52,10 +53,12 @@ pipeline {
                         --cov-fail-under 70
                     TEST_EXIT_CODE=$?
                     set -e
+                    
                     # Copier coverage.xml depuis le conteneur vers le workspace
                     docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true
                     docker rm -f test-runner 2>/dev/null || true
-                    #Retourner le code de sortie des tests
+                    
+                    # Retourner le code de sortie des tests
                     exit $TEST_EXIT_CODE
                 '''
             }
@@ -64,7 +67,7 @@ pipeline {
             }
         }
 
- // Stage 4 - SonarQube Analysis
+        // Stage 4 - SonarQube Analysis
         stage ('SonarQube Analysis') {
             environment {
                 SONARQUBE_TOKEN = credentials('sonar-token')
@@ -98,24 +101,25 @@ pipeline {
                 }
             }
         }
+
+        // Stage 5 - Quality Gate
         stage ('Quality Gate') {
             steps {
                 timeout(time: 15, unit: 'MINUTES') {
                     // Attend le résultat asynchrone du Quality Gate SonarQube
-                    // abortPipeline: true => bloque Push et Deploy si le gate échoue
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
 
-        // Stage - Security Scan (Trivy)
-        stage('Security Scan (Trivy)') {
+        // Stage 6 - Security Scan (Trivy)
+        stage('Security Scan') {
             steps {
                 sh '''
                     # Lancer le scan Trivy automatisé sur l'image générée au Stage 3
                     docker run --rm \
                         -v /var/run/docker.sock:/var/run/docker.sock \
-                        -v $WORKSPACE:/root/.cache/trivy \
+                        -v trivy-cache:/root/.cache/trivy \
                         aquasec/trivy:latest image \
                         --severity HIGH,CRITICAL \
                         --exit-code 0 \
@@ -123,9 +127,15 @@ pipeline {
                         ${IMAGE_NAME}:${IMAGE_TAG}
                 '''
             }
+            post {
+                failure {
+                    echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
+                    echo 'Corrigez les dépendances avant de déployer.'
+                }
+            }
         }
 
-        // 2.5 Stage 4 - Push (conditionnel)
+        // Stage 7 - Push
         stage('Push') {
             when { branch 'main' }
             steps {
@@ -143,24 +153,22 @@ pipeline {
                 }
             }
         }
-    }
     
-    // 4.2 Stage 7 - Build Production
-        stage('Build Production') {
+        // Stage 8 - Deploy Staging (Mis à jour selon l'énoncé de la partie 4.2)
+        stage('Deploy Staging') {
             when { branch 'main' }
             steps {
-                sh 'docker compose -f docker-compose.prod.yml build'
+                echo "Déploiement de ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} en staging"
+                sh '''
+                    # Arrêter le staging précédent proprement
+                    docker compose -f docker-compose.yml -p staging down 2>/dev/null || true
+                    # Démarrer la nouvelle version
+                    docker compose -f docker-compose.yml -p staging up -d
+                '''
+                echo "Staging disponible sur http://localhost:8001"
             }
         }
-
-        // 4.3 Stage 8 - Deploy Production
-        stage('Deploy Production') {
-            when { branch 'main' }
-            steps {
-                sh 'docker compose -f docker-compose.prod.yml up -d'
-                echo "Application déployée en production avec succès !"
-            }
-        }
+    } // Fin de la section stages
         
     post {
         always {
