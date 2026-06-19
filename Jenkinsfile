@@ -108,6 +108,23 @@ pipeline {
             }
         }
 
+        // Stage - Security Scan (Trivy)
+        stage('Security Scan (Trivy)') {
+            steps {
+                sh '''
+                    # Lancer le scan Trivy automatisé sur l'image générée au Stage 3
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v $WORKSPACE:/root/.cache/trivy \
+                        aquasec/trivy:latest image \
+                        --severity HIGH,CRITICAL \
+                        --exit-code 0 \
+                        --format table \
+                        ${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
         // 2.5 Stage 4 - Push (conditionnel)
         stage('Push') {
             when { branch 'main' }
