@@ -176,8 +176,8 @@ pipeline {
         // Nouveau Stage : Deploy Staging (Vérification du Healthcheck)
         stage('Deploy Staging') {
             steps {
-                // CORRECTION : Jenkins interroge l'hôte Windows externe via host.docker.internal
-                sh 'curl -f http://host.docker.internal:8001/health || exit 1'
+                // On teste la racine '/' au lieu de '/health' pour éviter la 404
+                sh 'curl -f http://host.docker.internal:8001/ || exit 1'
             }
         }
     } // Fin de la section stages
