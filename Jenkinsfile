@@ -64,7 +64,7 @@ pipeline {
             }
         }
 
-        // Stage 4 - SonarQube Analysis
+ // Stage 4 - SonarQube Analysis
         stage ('SonarQube Analysis') {
             environment {
                 SONARQUBE_TOKEN = credentials('sonar-token')
@@ -73,6 +73,7 @@ pipeline {
                 withSonarQubeEnv('sonarqube') {
                     sh '''
                         docker run --rm \
+                            --user "$(id -u):$(id -g)" \
                             --network cicd-network \
                             --volumes-from jenkins \
                             -w "$WORKSPACE" \
@@ -83,7 +84,7 @@ pipeline {
                             -Dsonar.projectKey=sentiment-ai \
                             -Dsonar.projectName=SentimentAI \
                             -Dsonar.projectBaseDir="$WORKSPACE" \
-                            -Dsonar.sources=src \
+                            -Dsonar.sources src \
                             -Dsonar.python.version=3.11 \
                             -Dsonar.python.coverage.reportPaths=coverage.xml \
                             -Dsonar.sourceEncoding=UTF-8 \
