@@ -145,6 +145,25 @@ pipeline {
         }
     }
     
+    // Stage 5 - Deploy
+        stage('Deploy') {
+            steps {
+                sh '''
+                    echo "Déploiement en cours de l'application..."
+                    # Arrêter l'ancienne version si elle tourne déjà
+                    docker rm -f sentiment-ai-prod 2>/dev/null || true
+                    
+                    # Lancer le nouveau conteneur en mode production
+                    docker run -d \
+                        --name sentiment-ai-prod \
+                        --network cicd-network \
+                        -p 8000:8000 \
+                        ${IMAGE_NAME}:${IMAGE_TAG}
+                        
+                    echo "Application déployée avec succès sur http://localhost:8000"
+                '''
+            }
+        }
     post {
         always {
             // Nettoyer les conteneurs de test, qu’il y ait succès ou échec
