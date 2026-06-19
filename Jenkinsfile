@@ -173,10 +173,12 @@ pipeline {
             }
         }
 
-       // Nouveau Stage : Deploy Staging (Validation de la connectivité)
+       // Nouveau Stage : Deploy Staging (Validation après attente)
         stage('Deploy Staging') {
             steps {
-                // -I permet de vérifier que le conteneur répond, peu importe la route
+                // On attend 5 secondes que l'API démarre complètement
+                sh 'sleep 5'
+                // On vérifie que le port répond bien
                 sh 'curl -I http://host.docker.internal:8001/ || exit 1'
             }
         }
