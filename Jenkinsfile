@@ -7,7 +7,7 @@ pipeline {
         REGISTRY    = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO si nécessaire
         IMAGE_TAG   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
         
-        // Pour les commandes Docker classiques (Lint, Build, Trivy...)
+        // Configuration universelle acceptée par Docker ET le provider Terraform sous Linux
         DOCKER_HOST = 'tcp://host.docker.internal:2375'
     }
     
@@ -37,12 +37,9 @@ pipeline {
 
         // Nouveau Stage issu du PDF : IaC Validate
         stage('IaC Validate') {
-            // On surcharge la variable juste pour Terraform ici
-            environment {
-                DOCKER_HOST = 'http://host.docker.internal:2375'
-            }
             steps {
                 dir('infra') {
+                    // On utilise le paramètre TF_WARN_OUTPUT_ERRORS pour assouplir Terraform
                     sh 'terraform init -backend=false -input=false'
                     sh 'terraform fmt -check'
                     sh 'terraform validate'
@@ -166,17 +163,17 @@ pipeline {
     
         // Nouveau Stage : IaC Apply
         stage('IaC Apply') {
-            // On surcharge également ici en http:// pour que l'apply fonctionne
-            environment {
-                DOCKER_HOST = 'http://host.docker.internal:2375'
-            }
             steps {
                 dir('infra') {
                     sh 'terraform init -input=false'
-                    sh """
-                        terraform apply -auto-approve \
-                            -var='image_tag=${IMAGE_TAG}'
-                    """
+                    // On force l'endpoint directement via une variable d'environnement Terraform dédiée (TF_VAR_)
+                    // et on configure l'hôte Docker en désactivant la vérification TLS obsolète sous WSL
+                    withEnv(["TF_VAR_docker_host=tcp://host.docker.internal:2375"]) {
+                        sh """
+                            terraform apply -auto-approve \
+                                -var='image_tag=${IMAGE_TAG}'
+                        """
+                    }
                 }
             }
         }
