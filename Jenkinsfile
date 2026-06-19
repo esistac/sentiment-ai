@@ -1,11 +1,13 @@
-// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale 8 Stages)
+// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale avec Terraform)
 pipeline {
     agent any // s’exécute sur n’importe quel agent disponible
     
     environment {
-        IMAGE_NAME = 'sentiment-ai'
-        REGISTRY = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO
-        IMAGE_TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+        IMAGE_NAME  = 'sentiment-ai'
+        REGISTRY    = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO si nécessaire
+        IMAGE_TAG   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+        // Permet à Terraform dans Jenkins de se connecter au Docker de la machine Windows
+        DOCKER_HOST = 'tcp://host.docker.internal:2375'
     }
     
     stages {
@@ -32,15 +34,24 @@ pipeline {
             }
         }
 
+        // Nouveau Stage issu du PDF : IaC Validate (juste après Lint)
+        stage('IaC Validate') {
+            steps {
+                dir('infra') {
+                    sh 'terraform init -backend=false -input=false'
+                    sh 'terraform fmt -check'
+                    sh 'terraform validate'
+                }
+            }
+        }
+
         // Stage 3 - Build & Test
         stage ('Build & Test') {
             steps {
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                    # Supprimer un éventuel conteneur test-runner résiduel
                     docker rm -f test-runner 2>/dev/null || true
                     
-                    # Lancer les tests en nommant le conteneur pour copier coverage.xml
                     set +e
                     docker run \
                         -e CI=true \
@@ -54,11 +65,9 @@ pipeline {
                     TEST_EXIT_CODE=$?
                     set -e
                     
-                    # Copier coverage.xml depuis le conteneur vers le workspace
                     docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true
                     docker rm -f test-runner 2>/dev/null || true
                     
-                    # Retourner le code de sortie des tests
                     exit $TEST_EXIT_CODE
                 '''
             }
@@ -75,7 +84,6 @@ pipeline {
             steps {
                 withSonarQubeEnv('sonarqube') {
                     sh '''
-                        # Accorder temporairement les droits d'écriture pour le conteneur scanner
                         chmod -R 777 "$WORKSPACE"
 
                         docker run --rm \
@@ -95,7 +103,6 @@ pipeline {
                             -Dsonar.sourceEncoding=UTF-8 \
                             -Dsonar.scanner.metadataFilePath=$WORKSPACE/report-task.txt
 
-                        # Restaurer des droits d'accès standards sécurisés
                         chmod -R 755 "$WORKSPACE"
                     '''
                 }
@@ -106,7 +113,6 @@ pipeline {
         stage ('Quality Gate') {
             steps {
                 timeout(time: 15, unit: 'MINUTES') {
-                    // Attend le résultat asynchrone du Quality Gate SonarQube
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -116,7 +122,6 @@ pipeline {
         stage('Security Scan') {
             steps {
                 sh '''
-                    # Lancer le scan Trivy automatisé sur l'image générée au Stage 3
                     docker run --rm \
                         -v /var/run/docker.sock:/var/run/docker.sock \
                         -v trivy-cache:/root/.cache/trivy \
@@ -154,25 +159,31 @@ pipeline {
             }
         }
     
-        // Stage 8 - Deploy Staging (Mis à jour selon l'énoncé de la partie 4.2)
+        // Nouveau Stage : IaC Apply (uniquement sur main, après le Push)
+        stage('IaC Apply') {
+            when { branch 'main' }
+            steps {
+                dir('infra') {
+                    sh 'terraform init -input=false'
+                    sh """
+                        terraform apply -auto-approve \
+                            -var='image_tag=${IMAGE_TAG}'
+                    """
+                }
+            }
+        }
+
+        // Nouveau Stage : Deploy Staging (Vérification du Healthcheck)
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {
-                echo "Déploiement de ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} en staging"
-                sh '''
-                    # Arrêter le staging précédent proprement
-                    docker compose -f docker-compose.yml -p staging down 2>/dev/null || true
-                    # Démarrer la nouvelle version
-                    docker compose -f docker-compose.yml -p staging up -d
-                '''
-                echo "Staging disponible sur http://localhost:8001"
+                sh 'curl -f http://localhost:8001/health || exit 1'
             }
         }
     } // Fin de la section stages
         
     post {
         always {
-            // Nettoyer les conteneurs de test, qu’il y ait succès ou échec
             sh 'docker compose down -v 2>/dev/null || true'
         }
         success {
