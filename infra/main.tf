@@ -12,12 +12,12 @@ provider "docker" {
   host = "http://host.docker.internal:2375"
 }
 
-# Import du réseau existant (cicd-network)
-resource "docker_network" "cicd" {
+# CORRECTION : On utilise 'data' au lieu de 'resource' pour utiliser le réseau existant sans planter
+data "docker_network" "cicd" {
   name = "cicd-network"
 }
 
-# Récupération de l'image déjà buildée par Jenkins (sans la re-compiler !)
+# Récupération de l'image déjà buildée par Jenkins
 resource "docker_image" "sentiment" {
   name         = "sentiment-ai:${var.image_tag}"
   keep_locally = true
@@ -35,7 +35,8 @@ resource "docker_container" "sentiment_staging" {
   }
 
   networks_advanced {
-    name = docker_network.cicd.name
+    # On référence le bloc data ici
+    name = data.docker_network.cicd.name
   }
 
   env = [
