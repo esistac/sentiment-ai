@@ -173,10 +173,11 @@ pipeline {
             }
         }
 
-        // Nouveau Stage : Deploy Staging
+        // Nouveau Stage : Deploy Staging (Vérification du Healthcheck)
         stage('Deploy Staging') {
             steps {
-                sh 'curl -f http://localhost:8001/health || exit 1'
+                // CORRECTION : Jenkins interroge l'hôte Windows externe via host.docker.internal
+                sh 'curl -f http://host.docker.internal:8001/health || exit 1'
             }
         }
     } // Fin de la section stages
