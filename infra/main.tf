@@ -2,41 +2,46 @@ terraform {
   required_providers {
     docker = {
       source  = "kreuzwerker/docker"
-      version = ">= 3.0"
+      version = ">= 3.0.0"
     }
   }
 }
 
-# Configuration Windows avec Docker Desktop
 provider "docker" {
-  # Force Terraform à utiliser l'URI HTTP standard compatible avec le conteneur Jenkins
+  # Connexion HTTP explicite requise pour l'environnement Jenkins local
   host = "http://host.docker.internal:2375"
 }
 
-# Reseau Docker partage Jenkins / SonarQube / SentimentAI
+# Déclaration de la variable reçue depuis le Jenkinsfile
+variable "image_tag" {
+  type        = string
+  description = "Tag de l'image Docker à déployer"
+}
+
+# Import du réseau existant (cicd-network)
 resource "docker_network" "cicd" {
   name = "cicd-network"
 }
 
-# Image Docker SentimentAI image LOCALE buildee par Jenkins
+# Récupération de l'image déjà buildée par Jenkins (sans la re-compiler !)
 resource "docker_image" "sentiment" {
   name         = "sentiment-ai:${var.image_tag}"
   keep_locally = true
 }
 
-# Conteneur staging
+# Déploiement du conteneur de staging
 resource "docker_container" "sentiment_staging" {
-  name    = var.container_name
+  name    = "sentiment-staging"
   image   = docker_image.sentiment.image_id
   restart = "unless-stopped"
 
-  networks_advanced {
-    name = docker_network.cicd.name
-  }
-
   ports {
     internal = 8000
-    external = var.app_port
+    external = 8001
+  }
+
+  networks_advanced {
+    name = docker_network.cicd.name
   }
 
   env = [
@@ -45,9 +50,16 @@ resource "docker_container" "sentiment_staging" {
   ]
 
   healthcheck {
-    test     = ["CMD", "curl", "-f", "http://localhost:8000/health"]
-    interval = "30s"
-    timeout  = "10s"
-    retries  = 3
+    test         = ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    interval     = "30s"
+    timeout      = "10s"
+    retries      = 3
+    start_period = "0s"
   }
+}
+
+# Variables de sortie (Outputs)
+output "container_id" {
+  value       = docker_container.sentiment_staging.id
+  description = "ID du conteneur déployé"
 }
