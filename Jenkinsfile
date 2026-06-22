@@ -9,7 +9,7 @@ pipeline {
     }
 
     stages {
-        // 2.2 Stage 1 - Checkout
+        // Stage 1 - Checkout
         stage('Checkout') {
             steps {
                 checkout scm
@@ -19,7 +19,7 @@ pipeline {
             }
         }
 
-        // 2.3 Stage 2 - Lint
+        // Stage 2 - Lint
         stage('Lint') {
             steps {
                 sh '''
@@ -32,7 +32,7 @@ pipeline {
             }
         }
 
-        // 2.4 Stage 3 - Build & Test
+        // Stage 3 - Build & Test
         stage('Build & Test') {
             steps {
                 sh '''
@@ -55,7 +55,7 @@ pipeline {
                     # Copier coverage.xml depuis le conteneur vers le workspace
                     docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true
                     docker rm -f test-runner 2>/dev/null || true
-                    #Retourner le code de sortie des tests
+                    # Retourner le code de sortie des tests
                     exit $TEST_EXIT_CODE
                 '''
             }
@@ -64,6 +64,7 @@ pipeline {
             }
         }
 
+        // Stage 4 - SonarQube Analysis
         stage('SonarQube Analysis') {
             environment {
                 SONARQUBE_TOKEN = credentials('sonar-token')
@@ -92,17 +93,16 @@ pipeline {
             }
         }
 
+        // Stage 5 - Quality Gate
         stage('Quality Gate') {
             steps {
                 timeout(time: 15, unit: 'MINUTES') {
-                    // Attend le résultat asynchrone du Quality Gate SonarQube
-                    // abortPipeline: true => bloque Push et Deploy si le gate échoue
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
 
-        // Stage - Security Scan (Trivy)
+        // Stage 6 - Security Scan (Trivy)
         stage('Security Scan (Trivy)') {
             steps {
                 sh '''
@@ -119,7 +119,7 @@ pipeline {
             }
         }
 
-        // 2.5 Stage 4 - Push (conditionnel)
+        // Stage 7 - Push (conditionnel)
         stage('Push') {
             when { branch 'main' }
             steps {
@@ -139,35 +139,33 @@ pipeline {
             }
         }
 
-        // --- AJOUT TP4 : STAGES TERRAFORM ---
+        // Stage 8 - Terraform Init & Plan
         stage('Terraform Init & Plan') {
             steps {
                 dir('infra') {
-                    // Initialisation
                     sh 'terraform init -no-color'
-                    // Planification en passant le tag dynamique et le registre cible
                     sh "terraform plan -var='image_tag=${IMAGE_TAG}' -var='registry=${REGISTRY}' -no-color"
                 }
             }
         }
 
+        // Stage 9 - Terraform Apply (Deploy Staging)
         stage('Terraform Apply (Deploy Staging)') {
             steps {
                 dir('infra') {
-                    // Déploiement automatique
                     sh "terraform apply -var='image_tag=${IMAGE_TAG}' -var='registry=${REGISTRY}' -auto-approve -no-color"
                 }
             }
         }
 
-        // --- 4.2 AJOUT DU STAGE SMOKE TEST (11ème Stage) ---
+        // Stage 10 - Smoke Test
         stage('Smoke Test') {
             steps {
                 sh '''
                     echo "Attente démarrage (10s)..."
                     sleep 10
 
-                    # 1. L’app répond (On utilise sentiment-staging sur le port interne 8000)
+                    # 1. L’app répond via l'alias réseau Docker
                     curl -f http://sentiment-staging:8000/health || exit 1
                     echo "/health OK"
 
@@ -175,13 +173,13 @@ pipeline {
                     curl -s http://sentiment-staging:8000/metrics || exit 1
                     echo "/metrics OK"
 
-                    # 3. Prometheus scrape l’app (On requête le conteneur prometheus sur le port 9090)
-                    sleep 20 # attendre au moins 1 scrape (15s)
+                    # 3. Prometheus scrape l’app
+                    sleep 20
                     curl -s "http://prometheus:9090/api/v1/query?query=up{job='sentiment-ai'}" | \\
                         grep -q '"value":.*1' || exit 1
                     echo "Prometheus scrape sentiment-ai : UP"
 
-                    # 4. Grafana répond (On requête le conteneur grafana sur le port 3000)
+                    # 4. Grafana répond
                     curl -f http://grafana:3000/api/health || exit 1
                     echo "Grafana OK"
                 '''
@@ -194,10 +192,10 @@ pipeline {
                 }
             }
         }
+    }
 
     post {
         always {
-            // Nettoyer les conteneurs de test, qu’il y ait succès ou échec
             sh 'docker compose down -v 2>/dev/null || true'
         }
         success {
