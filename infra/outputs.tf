@@ -9,6 +9,7 @@ output "app_url" {
 }
 
 output "network_name" {
-  description = "Nom du reseau Docker cree"
-  value       = docker_network.cicd.name
+  description = "Nom du reseau Docker utilise"
+  # CORRECTION : On utilise data.docker_network au lieu de docker_network
+  value       = data.docker_network.cicd.name
 }
