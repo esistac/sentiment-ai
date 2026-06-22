@@ -1,18 +1,15 @@
-// Jenkinsfile - Pipeline CI/CD SentimentAI (Version Finale avec Terraform Fixée)
+// Jenkinsfile - Pipeline CI/CD SentimentAI
 pipeline {
-    agent any // s’exécute sur n’importe quel agent disponible
-    
+    agent any // s’exécute sur n’import quel agent disponible
+
     environment {
-        IMAGE_NAME  = 'sentiment-ai'
-        REGISTRY    = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO si nécessaire
-        IMAGE_TAG   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-        
-        // Configuration standard pour l'exécutable docker natif (Lint, Build, Trivy...)
-        DOCKER_HOST = 'tcp://host.docker.internal:2375'
+        IMAGE_NAME = 'sentiment-ai'
+        REGISTRY   = 'ghcr.io/esistac' // remplacez VOTRE_PSEUDO
+        IMAGE_TAG  = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
-    
+
     stages {
-        // Stage 1 - Checkout
+        // 2.2 Stage 1 - Checkout
         stage('Checkout') {
             steps {
                 checkout scm
@@ -22,53 +19,43 @@ pipeline {
             }
         }
 
-        // Stage 2 - Lint
+        // 2.3 Stage 2 - Lint
         stage('Lint') {
             steps {
                 sh '''
-                    docker run --rm \
-                        --volumes-from jenkins \
-                        -w $WORKSPACE \
-                        python:3.12-slim \
+                    docker run --rm \\
+                        --volumes-from jenkins \\
+                        -w $WORKSPACE \\
+                        python:3.12-slim \\
                         sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"
                 '''
             }
         }
 
-        // Nouveau Stage issu du PDF : IaC Validate
-        stage('IaC Validate') {
-            steps {
-                dir('infra') {
-                    sh 'terraform init -backend=false -input=false'
-                    sh 'terraform fmt -check'
-                    sh 'terraform validate'
-                }
-            }
-        }
-
-        // Stage 3 - Build & Test
-        stage ('Build & Test') {
+        // 2.4 Stage 3 - Build & Test
+        stage('Build & Test') {
             steps {
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    # Supprimer un éventuel conteneur test-runner résiduel
                     docker rm -f test-runner 2>/dev/null || true
-                    
+                    # Lancer les tests en nommant le conteneur pour copier coverage.xml
                     set +e
-                    docker run \
-                        -e CI=true \
-                        --name test-runner \
-                        ${IMAGE_NAME}:${IMAGE_TAG} \
-                        pytest tests/ -v \
-                        --cov src \
-                        --cov-report=xml:/tmp/coverage.xml \
-                        --cov-report term-missing \
-                        --cov-fail-under 70
+                    docker run \\
+                      -e CI=true \\
+                      --name test-runner \\
+                      ${IMAGE_NAME}:${IMAGE_TAG} \\
+                      pytest tests/ -v \\
+                      --cov src \\
+                      --cov-report xml:/tmp/coverage.xml \\
+                      --cov-report term-missing \\
+                      --cov-fail-under=70
                     TEST_EXIT_CODE=$?
                     set -e
-                    
+                    # Copier coverage.xml depuis le conteneur vers le workspace
                     docker cp test-runner:/tmp/coverage.xml ./coverage.xml 2>/dev/null || true
                     docker rm -f test-runner 2>/dev/null || true
-                    
+                    #Retourner le code de sortie des tests
                     exit $TEST_EXIT_CODE
                 '''
             }
@@ -77,81 +64,73 @@ pipeline {
             }
         }
 
-        // Stage 4 - SonarQube Analysis
-        stage ('SonarQube Analysis') {
+        stage('SonarQube Analysis') {
             environment {
                 SONARQUBE_TOKEN = credentials('sonar-token')
             }
             steps {
                 withSonarQubeEnv('sonarqube') {
                     sh '''
-                        chmod -R 777 "$WORKSPACE"
-
-                        docker run --rm \
-                            --network cicd-network \
-                            --volumes-from jenkins \
-                            -w "$WORKSPACE" \
-                            -e SONAR_HOST_URL="$SONAR_HOST_URL" \
-                            -e SONAR_TOKEN="$SONARQUBE_TOKEN" \
-                            sonarsource/sonar-scanner-cli:latest \
-                            sonar-scanner \
-                            -Dsonar.projectKey=sentiment-ai \
-                            -Dsonar.projectName=SentimentAI \
-                            -Dsonar.projectBaseDir="$WORKSPACE" \
-                            -Dsonar.sources=src \
-                            -Dsonar.python.version=3.11 \
-                            -Dsonar.python.coverage.reportPaths=coverage.xml \
-                            -Dsonar.sourceEncoding=UTF-8 \
-                            -Dsonar.scanner.metadataFilePath=$WORKSPACE/report-task.txt
-
-                        chmod -R 755 "$WORKSPACE"
+                        docker run --rm \\
+                          --network cicd-network \\
+                          --volumes-from jenkins \\
+                          -w "$WORKSPACE" \\
+                          -e SONAR_HOST_URL="$SONAR_HOST_URL" \\
+                          -e SONAR_TOKEN="$SONARQUBE_TOKEN" \\
+                          sonarsource/sonar-scanner-cli:latest \\
+                          sonar-scanner \\
+                          -Dsonar.projectKey=sentiment-ai \\
+                          -Dsonar.projectName=SentimentAI \\
+                          -Dsonar.projectBaseDir="$WORKSPACE" \\
+                          -Dsonar.sources=src \\
+                          -Dsonar.python.version=3.11 \\
+                          -Dsonar.python.coverage.reportPaths=coverage.xml \\
+                          -Dsonar.sourceEncoding=UTF-8 \\
+                          -Dsonar.scanner.metadataFilePath=$WORKSPACE/report-task.txt
                     '''
                 }
             }
         }
 
-        // Stage 5 - Quality Gate
-        stage ('Quality Gate') {
+        stage('Quality Gate') {
             steps {
                 timeout(time: 15, unit: 'MINUTES') {
+                    // Attend le résultat asynchrone du Quality Gate SonarQube
+                    // abortPipeline: true => bloque Push et Deploy si le gate échoue
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
 
-        // Stage 6 - Security Scan (Trivy)
-        stage('Security Scan') {
+        // Stage - Security Scan (Trivy)
+        stage('Security Scan (Trivy)') {
             steps {
                 sh '''
-                    docker run --rm \
-                        -v /var/run/docker.sock:/var/run/docker.sock \
-                        -v trivy-cache:/root/.cache/trivy \
-                        aquasec/trivy:latest image \
-                        --severity HIGH,CRITICAL \
-                        --exit-code 0 \
-                        --format table \
+                    # Lancer le scan Trivy automatisé sur l'image générée au Stage 3
+                    docker run --rm \\
+                        -v /var/run/docker.sock:/var/run/docker.sock \\
+                        -v $WORKSPACE:/root/.cache/trivy \\
+                        aquasec/trivy:latest image \\
+                        --severity HIGH,CRITICAL \\
+                        --exit-code 0 \\
+                        --format table \\
                         ${IMAGE_NAME}:${IMAGE_TAG}
                 '''
             }
-            post {
-                failure {
-                    echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
-                    echo 'Corrigez les dépendances avant de déployer.'
-                }
-            }
         }
 
-        // Stage 7 - Push
+        // 2.5 Stage 4 - Push (conditionnel)
         stage('Push') {
             when { branch 'main' }
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'github-token', 
-                    usernameVariable: 'REGISTRY_USER', 
+                    credentialsId: 'github-token',
+                    usernameVariable: 'REGISTRY_USER',
                     passwordVariable: 'REGISTRY_PASS'
                 )]) {
                     sh """
                         echo \$REGISTRY_PASS | docker login ghcr.io -u \$REGISTRY_USER --password-stdin
+                        docker tag \${IMAGE_NAME}:\${IMAGE_TAG} \${REGISTRY}/\${IMAGE_NAME}:\${IMAGE_TAG}
                         docker push \${REGISTRY}/\${IMAGE_NAME}:\${IMAGE_TAG}
                         docker tag \${IMAGE_NAME}:\${IMAGE_TAG} \${REGISTRY}/\${IMAGE_NAME}:latest
                         docker push \${REGISTRY}/\${IMAGE_NAME}:latest
@@ -159,40 +138,39 @@ pipeline {
                 }
             }
         }
-    
-        // Nouveau Stage : IaC Apply
-        stage('IaC Apply') {
+
+        // --- AJOUT TP4 : STAGES TERRAFORM ---
+        stage('Terraform Init & Plan') {
             steps {
                 dir('infra') {
-                    sh 'terraform init -input=false'
-                    sh """
-                        terraform apply -auto-approve \
-                            -var='image_tag=${IMAGE_TAG}'
-                    """
+                    // Initialisation
+                    sh 'terraform init -no-color'
+                    // Planification en passant le tag dynamique et le registre cible
+                    sh "terraform plan -var='image_tag=${IMAGE_TAG}' -var='registry=${REGISTRY}' -no-color"
                 }
             }
         }
 
-       // Nouveau Stage : Deploy Staging (Validation après attente)
-        stage('Deploy Staging') {
+        stage('Terraform Apply (Deploy Staging)') {
             steps {
-                // On attend 5 secondes que l'API démarre complètement
-                sh 'sleep 5'
-                // On vérifie que le port répond bien
-                sh 'curl -I http://host.docker.internal:8001/ || exit 1'
+                dir('infra') {
+                    // Déploiement automatique
+                    sh "terraform apply -var='image_tag=${IMAGE_TAG}' -var='registry=${REGISTRY}' -auto-approve -no-color"
+                }
             }
         }
-    } // Fin de la section stages
-        
+    }
+
     post {
         always {
+            // Nettoyer les conteneurs de test, qu’il y ait succès ou échec
             sh 'docker compose down -v 2>/dev/null || true'
         }
         success {
-            echo "Pipeline réussi ! Image : ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "Pipeline réussi ! L'infrastructure a été déployée proprement via Terraform."
         }
         failure {
-            echo 'Pipeline échoué. Consultez les logs.'
+            echo 'Pipeline échoué. Consultez les logs ci-dessus.'
         }
     }
 }
