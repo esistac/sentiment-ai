@@ -162,7 +162,7 @@ pipeline {
 
         // --- 4.2 AJOUT DU STAGE SMOKE TEST (11ème Stage) ---
         stage('Smoke Test') {
-            when { branch 'main' }
+            // La condition branch 'main' a été retirée ici pour forcer son exécution
             steps {
                 sh '''
                     echo "Attente démarrage (10s)..."
