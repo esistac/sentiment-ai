@@ -1,6 +1,6 @@
 // Jenkinsfile - Pipeline CI/CD SentimentAI
 pipeline {
-    agent any // s’exécute sur n’import quel agent disponible
+    agent any // s’exécute sur n’importe quel agent disponible
 
     environment {
         IMAGE_NAME = 'sentiment-ai'
@@ -156,6 +156,43 @@ pipeline {
                 dir('infra') {
                     // Déploiement automatique
                     sh "terraform apply -var='image_tag=${IMAGE_TAG}' -var='registry=${REGISTRY}' -auto-approve -no-color"
+                }
+            }
+        }
+
+        // --- 4.2 AJOUT DU STAGE SMOKE TEST (11ème Stage) ---
+        stage('Smoke Test') {
+            when { branch 'main' }
+            steps {
+                sh '''
+                    echo "Attente démarrage (10s)..."
+                    sleep 10
+
+                    # 1. L’app répond
+                    curl -f http://localhost:8001/health || exit 1
+                    echo "/health OK"
+
+                    # 2. Les métriques sont exposées
+                    curl -s http://localhost:8001/metrics | \\
+                        grep -q sentiment_predictions_total || exit 1
+                    echo "/metrics OK -- métriques SentimentAI présentes"
+
+                    # 3. Prometheus scrape l’app
+                    sleep 20 # attendre au moins 1 scrape (15s)
+                    curl -s "http://localhost:9090/api/v1/query?query=up{job='sentiment-ai'}" | \\
+                        grep -q '"value":.*1' || exit 1
+                    echo "Prometheus scrape sentiment-ai : UP"
+
+                    # 4. Grafana répond
+                    curl -f http://localhost:3000/api/health || exit 1
+                    echo "Grafana OK"
+                '''
+            }
+            post {
+                failure {
+                    sh 'docker logs prometheus || true'
+                    sh 'docker logs sentiment-staging || true'
+                    echo 'Smoke Test KO -- voir logs ci-dessus'
                 }
             }
         }
