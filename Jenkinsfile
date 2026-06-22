@@ -169,14 +169,14 @@ pipeline {
                     curl -f http://sentiment-staging:8000/health || exit 1
                     echo "/health OK"
 
-                    # 2. Les métriques sont exposées (Optionnel si l'application renvoie 404)
+                    # 2. Les métriques sont exposées
                     curl -s http://sentiment-staging:8000/metrics || true
                     echo "/metrics test exécuté"
 
-                    # 3. Prometheus scrape l’app
+                    # 3. Prometheus scrape l’app (Correction de l'URL d'API encodée)
                     sleep 10
-                    curl -s "http://prometheus:9090/api/v1/query?query=up{job='sentiment-ai'}" || true
-                    echo "Prometheus accessible"
+                    curl -f "http://prometheus:9090/api/v1/query?query=up" || exit 1
+                    echo "Prometheus accessible et fonctionnel"
 
                     # 4. Grafana répond
                     curl -f http://grafana:3000/api/health || exit 1
