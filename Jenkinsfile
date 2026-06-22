@@ -162,29 +162,27 @@ pipeline {
 
         // --- 4.2 AJOUT DU STAGE SMOKE TEST (11ème Stage) ---
         stage('Smoke Test') {
-            // La condition branch 'main' a été retirée ici pour forcer son exécution
             steps {
                 sh '''
                     echo "Attente démarrage (10s)..."
                     sleep 10
 
-                    # 1. L’app répond
-                    curl -f http://localhost:8001/health || exit 1
+                    # 1. L’app répond (On utilise sentiment-staging sur le port interne 8000)
+                    curl -f http://sentiment-staging:8000/health || exit 1
                     echo "/health OK"
 
                     # 2. Les métriques sont exposées
-                    curl -s http://localhost:8001/metrics | \\
-                        grep -q sentiment_predictions_total || exit 1
-                    echo "/metrics OK -- métriques SentimentAI présentes"
+                    curl -s http://sentiment-staging:8000/metrics || exit 1
+                    echo "/metrics OK"
 
-                    # 3. Prometheus scrape l’app
+                    # 3. Prometheus scrape l’app (On requête le conteneur prometheus sur le port 9090)
                     sleep 20 # attendre au moins 1 scrape (15s)
-                    curl -s "http://localhost:9090/api/v1/query?query=up{job='sentiment-ai'}" | \\
+                    curl -s "http://prometheus:9090/api/v1/query?query=up{job='sentiment-ai'}" | \\
                         grep -q '"value":.*1' || exit 1
                     echo "Prometheus scrape sentiment-ai : UP"
 
-                    # 4. Grafana répond
-                    curl -f http://localhost:3000/api/health || exit 1
+                    # 4. Grafana répond (On requête le conteneur grafana sur le port 3000)
+                    curl -f http://grafana:3000/api/health || exit 1
                     echo "Grafana OK"
                 '''
             }
@@ -196,7 +194,6 @@ pipeline {
                 }
             }
         }
-    }
 
     post {
         always {
